@@ -75,6 +75,7 @@ metadata {
     
     preferences {
         input(name: "autoClose", type: "number", title: "Seconds to activate watering on open", required: false, defaultValue: 30);
+        input(name: "debug", type: "enum", title: "Print to debug log", options: ["yes","no"], required: true, defaultValue: "no");
     }
 
 }
@@ -84,58 +85,58 @@ metadata {
 
 
 def close(){
-    log.debug("Close()");
+    (debug=="yes")?log.debug("Close()"):null;
     parent.sendCommand("stop water",[device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength)]);     
 }
 
 def open(){
     Integer param=autoClose as Integer;
-    log.debug("Open() command with autoclose: ${param}");
+    (debug=="yes")?log.debug("Open() command with autoclose: ${param}"):null;
     parent.sendCommand("start water",[device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), param]);
 }
 
 def timedStart(duration) {
-    log.debug("timedStart() command with duration: ${duration}");
+    (debug=="yes")?log.debug("timedStart() command with duration: ${duration}"):null;
     parent.sendCommand("start water",[device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), duration as Integer]);
 }
 
 def dismissAlert(alertType) {
-    log.debug("dismissAlert()");
+    (debug=="yes")?log.debug("dismissAlert()"):null;
     parent.sendCommand("dismiss alert", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), alertType]);
 }
 
 def instantWateringPlan(timestamp, duration) {
     Random r=new Random();
-    log.debug("instantWateringPlan with timestamp $timestamp and duration $duration}");
+    (debug=="yes")?log.debug("instantWateringPlan with timestamp $timestamp and duration $duration}"):null;
     parent.sendCommand("set plan", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), r.nextInt(10000), 1, 0,0, timestamp, duration as Integer]);
 }
 
 def deleteWateringPlan() {
-    log.debug("deleteWateringPlan()");
+    (debug=="yes")?log.debug("deleteWateringPlan()"):null;
     parent.sendCommand("delete plan", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength)]);
 }
 
 def childLock(lockType) {
-    log.debug("childLock() with input $lockType");
+    (debug=="yes")?log.debug("childLock() with input $lockType"):null;
     parent.sendCommand("child lock", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), lockType]);
 }
 
 def enableAlert(alertType) {
-    log.debug("enableAlert() with input $alertType");
+    (debug=="yes")?log.debug("enableAlert() with input $alertType"):null;
     parent.sendCommand("enable alert", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), alertType]);
 }
 
 def disableAlert(alertType) {
-    log.debug("disableAlert() with input $alertType");
+    (debug=="yes")?log.debug("disableAlert() with input $alertType"):null;
     parent.sendCommand("disable alert", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength), alertType]);
 }
 
 def fetchGatewayTime() {
-    log.debug("fetchGatewayTime()");
+    (debug=="yes")?log.debug("fetchGatewayTime()"):null;
     parent.sendCommand("fetch time", [device.currentValue("gatewayId") as String]);
 }
 
 def testWireless() {
-    log.debug("testWireless()");
+    (debug=="yes")?log.debug("testWireless()"):null;
     parent.sendCommand("test wireless", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength)]);
 }
