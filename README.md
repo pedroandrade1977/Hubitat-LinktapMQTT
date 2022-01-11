@@ -61,12 +61,7 @@ The following features are not currently supported by the Linktap gateway firmwa
 The following features while supported have not been thoroughly tested, as I only own one gateway and device:
   •	Multiple gateways
   •	Multiple devices per gateway
-• 	Alerts besides the water cut-off
-
-
-**Known issues**
-
-•	Currently Linktap Gateway is responding with incorrect code for the Dismiss Alert command. This does not prevent the correct execution of the command. I have notified Linktap of this issue
+  •	Alerts besides the water cut-off
 
 
 **Installation**
