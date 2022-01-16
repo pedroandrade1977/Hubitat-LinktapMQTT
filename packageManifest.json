@@ -1,0 +1,23 @@
+{
+  "packageName": "Hubitat Linktap MQTT Driver",
+  "author": "Pedro Andrade",
+  "version": "1.0",
+  "minimumHEVersion": "2.2.1",
+  "dateReleased": "2022-01-10",
+  "drivers": [
+    {
+      "id": "c459034d-8bae-4b47-b340-7c9bcdf23bc3",
+      "name": "Linktap MQTT Controller",
+      "namespace": "HE_pfta",
+      "location": "https://raw.githubusercontent.com/pedroandrade1977/Hubitat-LinktapMQTT/main/Linktap%20MQTT%20Controller.groovy",
+      "required": true
+    },
+    {
+      "id": "270b5423-08a8-40ce-9689-db70d630a78d",
+      "name": "Linktap MQTT Taplinker",
+      "namespace": "HE_pfta",
+      "location": "https://raw.githubusercontent.com/pedroandrade1977/Hubitat-LinktapMQTT/main/Linktap%20MQTT%20Taplinker.groovy",
+      "required": true
+    }
+  ]
+}
