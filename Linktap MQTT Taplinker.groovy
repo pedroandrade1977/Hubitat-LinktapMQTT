@@ -16,7 +16,8 @@
  *
  *	Updates:
  *	Date: 2022-01-10	v1.0 Initial release
- */
+ *  	Date: 2022-01-18    	v1.1 MQTT reconnection functionality, daily/weekly/monthly/yearly water volumes
+*/
 
 import java.text.DecimalFormat
 import groovy.json.JsonSlurper
@@ -44,6 +45,10 @@ metadata {
         attribute "manualMode","boolean"
         attribute "planMode","number"
         attribute "childLock","string"
+        attribute "dailyVolume","number"
+        attribute "weeklyVolume","number"
+        attribute "monthlyVolume","number"
+        attribute "yearlyVolume","number"
         
         // start watering with parametric duration
         command "timedStart", [[name: "Duration*", type: "NUMBER", description: "Watering session duration in seconds (for G1/G2 must be a multiple of 60, for G1s/G2s any number between 3 and 86399)", constraints: ["NUMBER"]]]
@@ -139,4 +144,42 @@ def fetchGatewayTime() {
 def testWireless() {
     (debug=="yes")?log.debug("testWireless()"):null;
     parent.sendCommand("test wireless", [device.currentValue("gatewayId") as String, device.getDeviceNetworkId().substring(prefixLength)]);
+}
+
+private resetVolumes() {
+    Date curDate=new Date();
+    Integer day = curDate.date;
+    Integer month = curDate[Calendar.DAY_OF_MONTH];
+    Integer weekday = curDate[Calendar.DAY_OF_WEEK];
+    
+    if (debug=="yes") {
+        log.debug("resetVolumes()");
+        log.debug("day=$day, month=$month, weekday=$weekday");
+    }
+    
+    sendEvent(name: "dailyVolume", value: 0);
+        
+    if (weekday==1) sendEvent(name: "weeklyVolume", value: 0);
+    if (day==1) sendEvent(name: "monthlyVolume", value: 0);
+    if ((day==1) && (month==1)) sendEvent(name: "yearlyVolume", value: 0);
+    
+}
+
+public addVolume(volume) {
+    (debug=="yes")?log.debug("addVolume()"):null;
+    
+    sendEvent(name: "dailyVolume", value: (device.currentValue("dailyVolume")?:0)+volume);
+    sendEvent(name: "weeklyVolume", value: (device.currentValue("weeklyVolume")?:0)+volume);
+    sendEvent(name: "monthlyVolume", value: (device.currentValue("monthlyVolume")?:0)+volume);
+    sendEvent(name: "yearlyVolume", value: (device.currentValue("yearlyVolume")?:0)+volume);
+    
+}
+
+
+private updated() {
+    schedule("0 0 0 * * ?","resetVolumes");   
+}
+
+private installed() {
+    updated();
 }
