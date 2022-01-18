@@ -1,10 +1,10 @@
 {
   "packageName": "Hubitat Linktap MQTT Driver",
   "author": "Pedro Andrade",
-  "version": "1.0",
+  "version": "1.1",
   "minimumHEVersion": "2.2.1",
-  "dateReleased": "2022-01-10",
-  "releaseNotes": "Initial release",
+  "dateReleased": "2022-01-18",
+  "releaseNotes": "MQTT reconnection functionality, daily/weekly/monthly/yearly water volumes",
 	"documentationLink": "https://github.com/pedroandrade1977/Hubitat-LinktapMQTT/blob/main/README.md",
 	"communityLink": "https://community.hubitat.com/t/release-linktap-driver-for-hubitat-local-integration-through-mqtt/87225",
   "drivers": [
