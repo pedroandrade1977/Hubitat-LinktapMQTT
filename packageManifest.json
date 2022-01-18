@@ -4,6 +4,9 @@
   "version": "1.0",
   "minimumHEVersion": "2.2.1",
   "dateReleased": "2022-01-10",
+  "releaseNotes": "Initial release",
+	"documentationLink": "https://github.com/pedroandrade1977/Hubitat-LinktapMQTT/blob/main/README.md",
+	"communityLink": "https://community.hubitat.com/t/release-linktap-driver-for-hubitat-local-integration-through-mqtt/87225",
   "drivers": [
     {
       "id": "c459034d-8bae-4b47-b340-7c9bcdf23bc3",
