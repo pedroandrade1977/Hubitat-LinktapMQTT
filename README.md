@@ -41,6 +41,14 @@ The initial version of the Hubitat drivers support the following capabilities:
 12.	Retrieve current gateway date/time
 13.	Device wireless test
 
+**MQTT Connection Management**
+- Allows scheduling a connectivity test every x seconds
+- If connectivity has been lost, the driver will automatically try to reconnect
+- You can specify the number of reconnection attempts. When this is reached, the driver will give up and reconnection should be performed manually
+
+**Watering volumes calculation**
+- 4 new attributes to display daily, weekly monthly and yearly water volumes
+- Attributes are reset (respectively) at midnight (daily), sunday (weekly), 1st of the month (monthly) and 1st january (yearly) through a scheduled execution of a handler method
 
 **Not supported features**
 
