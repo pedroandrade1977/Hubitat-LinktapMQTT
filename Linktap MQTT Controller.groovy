@@ -17,6 +17,7 @@
  *
  *	Updates:
  *	Date: 2022-01-10	v1.0 Initial release
+ *  Date: 2022-01-18    v1.1 MQTT reconnection functionality, daily/weekly/monthly/yearly water volumes
  */
 
 import groovy.transform.Field
@@ -24,20 +25,25 @@ import groovy.transform.Field
 metadata {
   
   definition(name: "Linktap MQTT Controller", namespace: "HE_pfta", author: "Pedro Andrade") {
-      attribute "MQTTConnectionStatus","boolean";
-      command "MQTTConnect";
-      command "MQTTDisconnect";
-      command "registerEndDevice", [[name: "GatewayId*", type: "STRING"], [name: "DeviceId*", type: "STRING"]]
-      command "deleteEndDevice", [[name: "GatewayId*", type: "STRING"], [name: "DeviceId*", type: "STRING"]]
-      command "clearPendingDevices" // used to clear pending registration/deletion of devices in case something went wrong
+/*1.1*/   capability "Actuator"                             // having a capability allows the device to be used for custom actions in Rule Machine
+          attribute "MQTTConnectionStatus","string"        // Connected if hubitat/user has instructed driver to connect to MQTT broker
+/*1.1*/   attribute "MQTTConnectionMessage","string"        // last message received from Hubitat MQTT client
+/*1.1*/   attribute "MQTTLastMessageTimestamp","string"     // timestamp of last message
+          command "MQTTConnect"
+          command "MQTTDisconnect"
+          command "registerEndDevice", [[name: "GatewayId*", type: "STRING"], [name: "DeviceId*", type: "STRING"]]
+          command "deleteEndDevice", [[name: "GatewayId*", type: "STRING"], [name: "DeviceId*", type: "STRING"]]
+          command "clearPendingDevices" // used to clear pending registration/deletion of devices in case something went wrong
   }
 
   preferences {
-    input(name: "brokerIP", type: "string", title: "Broker IP", description: "IP of the MQTT Broker", defaultValue: "", required: true);
-    input(name: "brokerPort", type: "string", title: "Broker Port", description: "Port of the MQTT Broker", defaultValue: "1883", required: true);
-    input(name: "username", type: "string", title: "Username", description: "Username for the MQTT Broker", defaultValue: "", required: false);
-    input(name: "password", type: "string", title: "Password", description: "Password for the MQTT Broker", defaultValue: "", required: false);
-    input(name: "logLevel", type: "enum", title: "Log Level", options: ["0","1","2","3","4"], defaultValue: "2");
+            input(name: "brokerIP", type: "string", title: "Broker IP", description: "IP of the MQTT Broker", defaultValue: "", required: true);
+            input(name: "brokerPort", type: "string", title: "Broker Port", description: "Port of the MQTT Broker", defaultValue: "1883", required: true);
+            input(name: "username", type: "string", title: "Username", description: "Username for the MQTT Broker", defaultValue: "", required: false);
+            input(name: "password", type: "string", title: "Password", description: "Password for the MQTT Broker", defaultValue: "", required: false);
+            input(name: "logLevel", type: "enum", title: "Log Level", options: ["0","1","2","3","4"], defaultValue: "2");
+/*1.1*/     input(name: "conCheck", type: "number", title: "Connection check interval", description: "How often to verify MQTT connection status and attempt to reconnect", defaultValue: 300);
+/*1.1*/     input(name: "reconAttempts", type: "number", title: "Reconnection attempts", description: "How many times to try to reconnect (-1 is indefinite)", defaultValue: 3);
   }
 }    
 
@@ -109,7 +115,7 @@ def MQTTConnect() {
     
     } else {
         
-        logTrace("tcp://$brokerIP:$brokerPort, HE_TEST123, $username, $password");
+        logTrace("tcp://$brokerIP:$brokerPort, HE_LINKTAP_CLIENT, $username, $password");
         
         // connect to MQTT broker
         try {
@@ -120,15 +126,22 @@ def MQTTConnect() {
             if (MQTTisConnected()) {
                 interfaces.mqtt.subscribe("/linktap/up_cmd/#",0); // topic to receive requests from the gateway
                 interfaces.mqtt.subscribe("/linktap/down_cmd_ack/#",0); // topic to receive acknowledgements from gateway after sending of commands
+                state.actualReconAttempts=0; /*1.1*/
             }
         } catch (org.eclipse.paho.client.mqttv3.MqttException e) {
             logError("MQTTConnect: Cannot connect to broker ($e)");
         } catch (Exception e) {
             logError("MQTTConnect: Unknown error ($e)");
         }
+
+        if (device.currentValue("MQTTConnectionStatus")=="Disconnected") { /*1.1*/
+            sendEvent(name: "MQTTConnectionStatus", value: "Connected");
+        }
+    
+        if ((conCheck?:0)>0) runIn(conCheck,'checkMQTTConnection',null); // schedule connection status check
+    
     }
     
-    sendEvent(name: "MQTTConnectionStatus", value: MQTTisConnected());
     
     logDebug("END MQTTConnect");
 }
@@ -145,19 +158,49 @@ def MQTTDisconnect() {
         logInfo("MQTTDisconnect: Disconnected from broker");
     }
     
-    sendEvent(name: "MQTTConnectionStatus", value: MQTTisConnected());
+    sendEvent(name: "MQTTConnectionStatus", value: "Disconnected");
+    presence="not present";
     
     logDebug("END MQTTDisconnect");
 }
 
+
 def mqttClientStatus(String message) {
     
     logInfo("MQTT Client Status: $message")
-    
-    // if MQTT is not connected but the device thinks it is, reconnect
-    if (!MQTTisConnected() && MQTTConnectionStatus) MQTTConnect();
+    sendEvent(name: "MQTTConnectionMessage", value: message);    /*1.1*/
+    sendEvent(name: "MQTTLastMessageTimestamp", value: (new Date()).format("yyyyMMdd-HH:mm:ss"));    /*1.1*/
     
 }
+
+
+/*1.1*/
+def checkMQTTConnection() {
+    // MQTTConnectionStatus has the indication of the "intent" of the user, not necessarily the actual connection status, and is updated in:
+    //    a) MQTTConnect to Connected
+    //    b) MQTTDisconnect to Disconnected
+
+    logDebug("ENTERED checkMQTTConnection ${state.actualReconAttempts} < $reconAttempts");
+    
+    if (device.currentValue("MQTTConnectionStatus")=="Connected") { // if device thinks connection should be active
+
+        logDebug("MQTTConnectionStatus=${device.currentValue("MQTTConnectionStatus")} and MQTT client is actually ${MQTTisConnected()?'':'not '}connected");
+        
+        if (!MQTTisConnected())
+            if (((state.actualReconAttempts<reconAttempts) || (reconAttempts==-1))) { // only attempt reconnect if have not reached max attempts
+                logWarning("MQTT client is not connected while it should, attempting to reconnect");
+                MQTTConnect();      // re-connect, which will also schedule next check
+                if (!MQTTisConnected()) state.actualReconAttempts++;  // if failed, increase number of attempts. This state variable is re-set within MQTTConnect if connection successful
+            } else {// give up on reconnection
+                sendEvent(name: "MQTTConnectionStatus", value: "Disconnected");
+                logWarning("Max reconnect attempts reached, will stop checking connection status");
+            }
+        else
+            // schedule next check
+            if ((conCheck?:0)>0) runIn(conCheck,'checkMQTTConnection',null);
+    }
+}
+
 
 private boolean MQTTisConnected() { return interfaces.mqtt.isConnected() }
 
@@ -194,7 +237,7 @@ private void logData(Map data) {
 }
 
 void installed() {
-    sendEvent(name: "MQTTConnectionStatus", value: false);
+    sendEvent(name: "MQTTConnectionStatus", value: "Disconnected");
 }
 
                   
@@ -257,7 +300,7 @@ private processUpCommand(String deviceId, String stringMessage) {
             ackSyncTime(gatewayId);
         break;
 /*        case 8: // fetch rainfall data
-            // not currently supported
+            // not currently supported - fetchRainfallData(gatewayId);
         break;
         case 9: // skipped watering
             // not currently supported
@@ -311,6 +354,12 @@ private updateDeviceStatus(deviceId, dev_stat) {
         tapLinker.sendEvent(name: "wateringSessionDuration", value: dev_stat.total_duration);
         tapLinker.sendEvent(name: "wateringSessionRemaining", value: dev_stat.remain_duration);
         tapLinker.sendEvent(name: "wateringSessionVolume", value: dev_stat.volume);
+
+        /* 1.1 */
+        if ((dev_stat.volume>0) && (dev_stat.is_final)) {
+            tapLinker.addVolume(dev_stat.volume);
+        }
+        
         tapLinker.sendEvent(name: "alertFell", value: dev_stat.is_fall, descriptionText: dev_stat.is_fall?statusMessages.getAt("is_fall"):"");
         tapLinker.sendEvent(name: "alertBroken", value: dev_stat.is_broken, descriptionText: dev_stat.is_broken?statusMessages.getAt("is_broken"):"");
         tapLinker.sendEvent(name: "alertCutoff", value: dev_stat.is_cutoff, descriptionText: dev_stat.is_cutoff?statusMessages.getAt("is_cutoff"):"");
@@ -447,6 +496,7 @@ def clearPendingDevices() {
     state.deviceToDelete=null;
 }
 
+
 //**************** MQTT Message Processing
 
 def publishMessage (String topic, String message) {
@@ -471,7 +521,8 @@ void sendCommand(method,args = []) {
     'fetch time': ["cmd": 14, "gw_id": args[0]],
     'test wireless': ["cmd": 15, "gw_id": args[0], "dev_id": args[1]],
     'register device': ["cmd": 1, "gw_id": args[0], "end_dev": [args[1]]],
-    'delete device': ["cmd": 2, "gw_id": args[0], "end_dev": [args[1]]]
+    'delete device': ["cmd": 2, "gw_id": args[0], "end_dev": [args[1]]],
+    'update rain': ["cmd": 8, "gw_id": args[0], "rain": [args[1],args[2]], "valid_duration": args[3]]
 	]
 
 	def request = methods.getAt(method)
@@ -488,7 +539,8 @@ void ackCommand(method,args = []) {
     
     def methods = [
         'handshake ack': ["cmd": 0, "gw_id": args[0], "date": args[1], "time": args[2], "wday": args[3]],
-        'sync time ack': ["cmd": 13, "gw_id": args[0], "date": args[1], "time": args[2], "wday": args[3]]
+        'sync time ack': ["cmd": 13, "gw_id": args[0], "date": args[1], "time": args[2], "wday": args[3]],
+        'fetch rain data ack': ["cmd": 8, "gw_id": args[0], "rain": [args[1],args[2]], "valid_duration": args[3]]
 	]
 
 	def request = methods.getAt(method)
