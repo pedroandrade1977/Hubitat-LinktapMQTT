@@ -40,6 +40,7 @@ The initial version of the Hubitat drivers support the following capabilities:
 11.	Clear/dismiss previously issued alerts from the device
 12.	Retrieve current gateway date/time
 13.	Device wireless test
+14.	Send local rain data to gateway for rain skipping functionality
 
 **MQTT Connection Management**
 - Allows scheduling a connectivity test every x seconds
@@ -54,10 +55,8 @@ The initial version of the Hubitat drivers support the following capabilities:
 
 Linktap provides the option to have both cloud (App) and local (MQTT) integrations active. While several features work, especially related to device status and watering start/stop, simultaneous control through the two methods can create behavior inconsistencies, especially in what refers to registration/deletion of end devices. **If you intend to keep the cloud integration active when setting up local integration, I strongly recommend that you setup all devices through the app only, and not through Hubitat.**
 
-The following features are supported by the Linktap gateway firmware, but not implemented in the Hubitat driver:
-1.	Other types of watering plans (e.g. Calendar, 7-day, Odd-even, Interval, Month). The input parameters for setting up these types of plans are complex and not suited to Hubitat UI, Rule Machine, etc.. If someone has a specific need, happy to evaluate the possibility of implementing some of these in the future.
-2.	Provide local rainfall data to gateway (I intend to try to use local Personal Weather Station data but haven’t gotten around to look into this yet)
-3.	Notification of skipped watering due to rain (to be done in a future release)
+The following feature are supported by the Linktap gateway firmware, but not implemented in the Hubitat driver:
+- Other types of watering plans (e.g. Calendar, 7-day, Odd-even, Interval, Month). The input parameters for setting up these types of plans are complex and not suited to Hubitat UI, Rule Machine, etc.. If someone has a specific need, happy to evaluate the possibility of implementing some of these in the future.
 
 The following features are not currently supported by the Linktap gateway firmware through MQTT integration:
 1.	Eco mode
