@@ -17,7 +17,7 @@
  *
  *	Updates:
  *	Date: 2022-01-10	v1.0 Initial release
- *  Date: 2022-01-12    v1.1 Added rain data management and MQTT reconnection functionality
+ *  Date: 2022-01-18    v1.1 Added rain data management and MQTT reconnection functionality
  *  Date: 2022-01-23    v1.2 Fixed issue with water volumes, added command for submission of rain data to gateway, changed child device logging
  */
 
