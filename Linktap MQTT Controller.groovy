@@ -17,7 +17,8 @@
  *
  *	Updates:
  *	Date: 2022-01-10	v1.0 Initial release
- *  	Date: 2022-01-18    	v1.1 MQTT reconnection functionality, daily/weekly/monthly/yearly water volumes
+ *  Date: 2022-01-12    v1.1 Added rain data management and MQTT reconnection functionality
+ *  Date: 2022-01-23    v1.2 Fixed issue with water volumes, added command for submission of rain data to gateway, changed child device logging
  */
 
 import groovy.transform.Field
@@ -29,11 +30,18 @@ metadata {
           attribute "MQTTConnectionStatus","string"        // Connected if hubitat/user has instructed driver to connect to MQTT broker
 /*1.1*/   attribute "MQTTConnectionMessage","string"        // last message received from Hubitat MQTT client
 /*1.1*/   attribute "MQTTLastMessageTimestamp","string"     // timestamp of last message
+/*1.2*/   attribute "obsRainData","number"                  // observed rain volume
+/*1.2*/   attribute "forRainData","number"                  // forecasted rain volume
+/*1.2*/   attribute "rainDuration","number"                 // period for observation/forecast
+/*1.2*/   attribute "rainUpdateTimestamp","number"          // timestamp of when rain data received
+
           command "MQTTConnect"
           command "MQTTDisconnect"
           command "registerEndDevice", [[name: "GatewayId*", type: "STRING"], [name: "DeviceId*", type: "STRING"]]
           command "deleteEndDevice", [[name: "GatewayId*", type: "STRING"], [name: "DeviceId*", type: "STRING"]]
           command "clearPendingDevices" // used to clear pending registration/deletion of devices in case something went wrong
+/*1.2*/   command "updateRain", [[name: "gatewayId", type: "STRING"], [name: "obsRainData", type: "NUMBER"], [name: "forRainData", type: "NUMBER"], [name: "rainDuration", type: "NUMBER"]]
+
   }
 
   preferences {
@@ -55,6 +63,7 @@ metadata {
      5: 'delete plan',
      6: 'start water',
      7: 'stop water',
+/*1.2*/     8: 'update rain',
      10: 'alert on/off',
      11: 'dismiss alert',
      12: 'child lock',
@@ -169,7 +178,7 @@ def mqttClientStatus(String message) {
     
     logInfo("MQTT Client Status: $message")
     sendEvent(name: "MQTTConnectionMessage", value: message);    /*1.1*/
-    sendEvent(name: "MQTTLastMessageTimestamp", value: (new Date()).format("yyyyMMdd-HH:mm:ss"));    /*1.1*/
+    sendEvent(name: "MQTTLastMessageTimestamp", value: (new Date()).format("yyyy-MM-dd HH:mm:ss"));    /*1.1*/
     
 }
 
@@ -299,12 +308,13 @@ private processUpCommand(String deviceId, String stringMessage) {
         case 13: // sync gw time
             ackSyncTime(gatewayId);
         break;
-/*        case 8: // fetch rainfall data
-            // not currently supported - fetchRainfallData(gatewayId);
+        case 8: // fetch rainfall data
+            fetchRainfallData(gatewayId); /* 1.2 */
         break;
         case 9: // skipped watering
-            // not currently supported
-        break;*/
+            def devId=result.dev_id;
+            rainSkipNotification(devId); /* 1.2 */
+        break;
         default:
             logWarning("Unsupported command received from gateway $cmd");
         break;
@@ -349,17 +359,14 @@ private updateDeviceStatus(deviceId, dev_stat) {
         tapLinker.sendEvent(name: "flowMeterStatus", value: dev_stat.is_flm_plugin, descriptionText: statusMessages.getAt("is_flm_plugin"));
         tapLinker.sendEvent(name: "signalStrength", value: dev_stat.is_rf_linked?dev_stat.signal:0);
         tapLinker.sendEvent(name: "battery", value: dev_stat.battery);
+/*1.2*/ if ((dev_stat.volume>0) && (dev_stat.is_final) && (!dev_stat.is_watering) && (tapLinker.currentValue("valve"))) {
+            tapLinker.addVolume(dev_stat.volume);
+        }
         tapLinker.sendEvent(name: "valve", value: dev_stat.is_watering);
         tapLinker.sendEvent(name: "rate", value: dev_stat.speed);
         tapLinker.sendEvent(name: "wateringSessionDuration", value: dev_stat.total_duration);
         tapLinker.sendEvent(name: "wateringSessionRemaining", value: dev_stat.remain_duration);
         tapLinker.sendEvent(name: "wateringSessionVolume", value: dev_stat.volume);
-
-        /* 1.1 */
-        if ((dev_stat.volume>0) && (dev_stat.is_final)) {
-            tapLinker.addVolume(dev_stat.volume);
-        }
-        
         tapLinker.sendEvent(name: "alertFell", value: dev_stat.is_fall, descriptionText: dev_stat.is_fall?statusMessages.getAt("is_fall"):"");
         tapLinker.sendEvent(name: "alertBroken", value: dev_stat.is_broken, descriptionText: dev_stat.is_broken?statusMessages.getAt("is_broken"):"");
         tapLinker.sendEvent(name: "alertCutoff", value: dev_stat.is_cutoff, descriptionText: dev_stat.is_cutoff?statusMessages.getAt("is_cutoff"):"");
@@ -388,6 +395,17 @@ private ackSyncTime(String gwId) {
     logDebug("ENTERED ackSyncTime WITH PARAMETERS $gwId");
     ackCommand('sync time ack', [gwId, date.format("yyyyMMdd"), date.format("HHmmss"), date.format("u") as Integer]);
     logDebug("END ackSyncTime");
+}
+
+/* 1.2 */
+private rainSkipNotification(String deviceId) {
+ 
+    logDebug("ENTERED rainSkipNotification FOR DEVICE $deviceId");
+
+    def tapLinker=getChildDevice("$devicePrefix$deviceId");
+    if (tapLinker) {
+        tapLinker.sendEvent(name: "rainSkipNotification", value: (new Date()).format("yyyy-MM-dd HH:mm:ss"));
+    }
 }
 
 
@@ -441,6 +459,7 @@ private processDownAck(String deviceId, String stringMessage) {
         case 5:
         case 6: 
         case 7:
+        case 8:
         case 10:
         case 11:
         case 12:
@@ -491,11 +510,39 @@ def deleteEndDevice(String gatewayId, String deviceId) {
         logWarning("Didn't process deletion because we have another device pending deletion");
 }
 
+/*1.2*/
+private fetchRainfallData(String gatewayId) {
+    BigDecimal a_obsRainData=device.currentValue("obsRainData");
+    BigDecimal a_forRainData=device.currentValue("forRainData");
+    Integer a_rainDuration=device.currentValue("rainDuration");
+    long a_rainTimestamp=device.currentValue("rainUpdateTimestamp");
+    long a_now=now();
+    
+    Integer b_rainDuration=a_rainDuration-(a_now-a_rainTimestamp)/60000;
+    
+    // check if attributes are set
+    logDebug("ENTERED fetchRainfallData: $a_obsRainData, $a_forRainData, $b_rainDuration");
+    Boolean rainDataIsSet=((a_obsRainData?:-1)>=0 && (a_forRainData?:-1)>=0 && (b_rainDuration?:0)>0);
+    if (rainDataIsSet) {
+        ackCommand('fetch rain data ack',[gatewayId, a_obsRainData, a_forRainData, b_rainDuration]);
+    } else logWarning("Not all rain data is set");   
+}
+
 def clearPendingDevices() {
     state.deviceToAdd=null;
     state.deviceToDelete=null;
 }
 
+/*1.2*/
+def updateRain(gatewayId, p_obsRainData, p_forRainData, p_rainDuration) {
+    logDebug("ENTERED updateRain: $p_obsRainData, $p_forRainData, $p_rainDuration");
+    sendEvent(name: "obsRainData", value: p_obsRainData);
+    sendEvent(name: "forRainData", value: p_forRainData);
+    sendEvent(name: "rainDuration", value: p_rainDuration);
+    sendEvent(name: "rainUpdateTimestamp", value: now());
+    sendCommand('update rain', [gatewayId, p_obsRainData, p_forRainData, p_rainDuration]);
+    logDebug("END updateRain");
+}
 
 //**************** MQTT Message Processing
 
@@ -522,7 +569,7 @@ void sendCommand(method,args = []) {
     'test wireless': ["cmd": 15, "gw_id": args[0], "dev_id": args[1]],
     'register device': ["cmd": 1, "gw_id": args[0], "end_dev": [args[1]]],
     'delete device': ["cmd": 2, "gw_id": args[0], "end_dev": [args[1]]],
-    'update rain': ["cmd": 8, "gw_id": args[0], "rain": [args[1],args[2]], "valid_duration": args[3]]
+    'update rain': ["cmd": 8, "gw_id": args[0], "rain": [args[1],args[2]], "valid_duration": args[3]] //1.2
 	]
 
 	def request = methods.getAt(method)
@@ -540,7 +587,7 @@ void ackCommand(method,args = []) {
     def methods = [
         'handshake ack': ["cmd": 0, "gw_id": args[0], "date": args[1], "time": args[2], "wday": args[3]],
         'sync time ack': ["cmd": 13, "gw_id": args[0], "date": args[1], "time": args[2], "wday": args[3]],
-        'fetch rain data ack': ["cmd": 8, "gw_id": args[0], "rain": [args[1],args[2]], "valid_duration": args[3]]
+/*1.2*/ 'fetch rain data ack': ["cmd": 8, "gw_id": args[0], "rain": [args[1],args[2]], "valid_duration": args[3]]
 	]
 
 	def request = methods.getAt(method)
